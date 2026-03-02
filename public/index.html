@@ -28,7 +28,12 @@
   <div class="wrap">
     <div class="top">
       <h1>市场情绪监控看板</h1>
-      <div class="muted" id="meta">加载中...</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label class="muted" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input id="beginnerToggle" type="checkbox" checked /> 新手模式
+        </label>
+        <div class="muted" id="meta">加载中...</div>
+      </div>
     </div>
     <div id="summaryHero" class="card" style="margin-top:14px"></div>
     <div id="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px"></div>
@@ -39,6 +44,7 @@
 let charts = {};
 let current = 'crypto';
 let sectorsCache = {};
+let beginnerMode = localStorage.getItem('beginnerMode') !== 'off';
 
 function titleOf(k){ return ({crypto:'加密 / Polymarket',macro:'宏观经济',tech_ai:'AI / 科技',geopolitics:'地缘政治'})[k] || k; }
 
@@ -118,7 +124,7 @@ function renderPanel(){
 
   const explanationHTML = `
     <div class="hl">
-      <div class="row"><strong>为什么变化（近1小时）</strong><span style="padding:2px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35)">${nt.label}</span></div>
+      <div class="row"><strong>为什么变化（近1小时） ${beginnerMode ? '· 先看这里②' : ''}</strong><span style="padding:2px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35)">${nt.label}</span></div>
       <div class="muted" style="margin-top:6px;line-height:1.6">
         判定依据：连续性${nt.continuity}，样本量${nt.sampleCount}条，跨源一致性${nt.sourceConsistency}。<br>
         正向信号 ${explanation.posCount} 条，负向信号 ${explanation.negCount} 条；${explanation.trendText}。<br>
@@ -132,17 +138,19 @@ function renderPanel(){
       <div style="margin-top:4px;line-height:1.6">${explainNews}</div>
     </div>`;
 
-  const highlightHTML = latestHighlights.length ? latestHighlights.map(h => `
+  const highlightHTML = beginnerMode
+    ? '<div class="hl muted">先看这里③：先看上方“结论+解释+建议”，详细新闻流已在新手模式下弱化展示。</div>'
+    : (latestHighlights.length ? latestHighlights.map(h => `
     <div class="hl">
       <div class="muted">变动时点：${h.time} ｜ Δ${h.delta}</div>
       ${(h.reasons || []).map(r => `<div class="news">${r.image ? `<img src="${r.image}" alt="news">` : ''}<div>• <a href="${r.url}" target="_blank">${r.title}</a><br><span class="muted">来源：${r.source}</span><br><span class="muted">内容：${(r.content || '').slice(0,140)}...</span><br><span class="muted">打分依据：+${(r.scoreBasis?.pos||[]).join(',')||'无'} / -${(r.scoreBasis?.neg||[]).join(',')||'无'}</span></div></div>`).join('')}
-    </div>`).join('') : '<div class="hl muted">暂无显著变动新闻</div>';
+    </div>`).join('') : '<div class="hl muted">暂无显著变动新闻</div>');
 
   document.getElementById('panel').innerHTML = `
     <div class="card">
       <div class="row"><strong>${titleOf(current)}</strong><span class="delta ${deltaClass}">${deltaSign}${data.change}</span></div>
       <div class="muted" title="情绪值越大越偏多，越小越偏空；绝对值越大代表波动强度更高。">
-        当前情绪值：${data.sentimentNow ?? 0}
+        当前情绪值：${data.sentimentNow ?? 0} ${beginnerMode ? '（越大越偏多，越小越偏空）' : ''}
         <span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35);color:${band.color}">${band.label}</span>
         <span style="margin-left:6px;opacity:.9">ⓘ</span>
       </div>
@@ -158,6 +166,7 @@ function renderPanel(){
       </div>
       ${explanationHTML}
       <div id="chart_one" style="height:280px;margin-top:10px"></div>
+      <div id="bar_explain" class="hl muted">${beginnerMode ? '先看这里③：点击或悬浮 K 线柱，直接看“这根K线为什么动”。' : '点击或悬浮 K 线柱，查看“这根K线为什么动”。'}</div>
       ${highlightHTML}
     </div>`;
 
@@ -230,7 +239,7 @@ function renderSummary(sectors){
   const conf = confidenceLabel((consistency * 0.45) + (sampleScore * 0.35) + (sourceOk * 0.2));
 
   hero.innerHTML = `
-    <div class="row"><strong>一句话总结</strong><span class="muted">面向新手</span></div>
+    <div class="row"><strong>一句话总结 ${beginnerMode ? '· 先看这里①' : ''}</strong><span class="muted">面向新手</span></div>
     <div style="margin-top:8px;font-size:16px;line-height:1.5">
       当前整体情绪<strong>${directionLabel(avgNow)}</strong>，近1小时<strong>${trendLabel(avgChange)}</strong>；
       主要由<strong>${titleOf(reason?.sector || 'crypto')}</strong>相关新闻驱动，当前可信度<strong>${conf}</strong>，
@@ -240,11 +249,46 @@ function renderSummary(sectors){
   `;
 }
 
-function drawOne(data){
+function dedupeNews(items = []) {
+  const seen = new Set();
+  const out = [];
+  for (const it of items) {
+    const key = `${(it.url || '').trim()}|${(it.title || '').trim().toLowerCase()}`;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(it);
+  }
+  return out;
+}
+
+function explainSentence(meta = {}) {
+  const plus = (meta.plus || []).length;
+  const minus = (meta.minus || []).length;
+  if (plus - minus >= 1) return '正面关键词集中，推动上行。';
+  if (minus - plus >= 1) return '负面关键词集中，导致下探。';
+  return '多空信号混合，价格偏震荡。';
+}
+
+function drawOne(data){ 
   const el = document.getElementById('chart_one');
   if(!el) return;
   el.style.position = 'relative';
   const detailMap = new Map((data.kline || []).slice(-80).map(x => [parseTs(x.time), x.analysis || {}]));
+  const articleMap = new Map();
+  for (const a of (data.articles || [])) {
+    const t = new Date(a.pubDate || Date.now());
+    const min = Math.floor(t.getUTCMinutes() / 5) * 5;
+    t.setUTCMinutes(min, 0, 0);
+    const key = Math.floor(t.getTime() / 1000);
+    const arr = articleMap.get(key) || [];
+    arr.push({
+      title: a.titleZh || a.title,
+      source: a.source || 'unknown',
+      url: a.url,
+      time: a.pubDate || ''
+    });
+    articleMap.set(key, arr);
+  }
   const raw = (data.kline || []).slice(-80).map(x => ({ time: parseTs(x.time), open:+x.open, high:+x.high, low:+x.low, close:+x.close }));
   if (charts.one?.remove) charts.one.remove();
   const chart = LightweightCharts.createChart(el, {
@@ -261,15 +305,51 @@ function drawOne(data){
   tip.innerHTML = '悬浮柱子查看涨跌解析';
   el.appendChild(tip);
 
-  chart.subscribeCrosshairMove(param => {
-    const d = param?.seriesData?.get(series);
-    if (!d || !param.time) return;
-    const t = Number(param.time);
+  const explainEl = document.getElementById('bar_explain');
+  let lockedTime = null;
+
+  function renderBarExplain(t, d) {
+    if (!explainEl || !t || !d) return;
     const meta = detailMap.get(t) || {};
     const change = (d.close - d.open).toFixed(2);
-    tip.innerHTML = `涨跌：${change}<br>新闻数：${meta.newsCount || 0}<br>加分词：${(meta.plus||[]).join(',') || '无'}<br>减分词：${(meta.minus||[]).join(',') || '无'}<br>样本：${(meta.sample||[]).join('；') || '无'}`;
+    const news = dedupeNews((articleMap.get(t) || [])).slice(0, 3);
+    const newsHtml = news.length
+      ? news.map(n => `• <a href="${n.url}" target="_blank">${n.title}</a>（${n.source}｜${(n.time || '').replace('T', ' ').slice(0,16)}）`).join('<br>')
+      : '• 当前时间点未命中证据新闻，建议查看相邻时间点。';
+
+    tip.innerHTML = beginnerMode
+      ? `涨跌：${change}<br>新闻数：${meta.newsCount || 0}`
+      : `涨跌：${change}<br>新闻数：${meta.newsCount || 0}<br>加分词：${(meta.plus||[]).join(',') || '无'}<br>减分词：${(meta.minus||[]).join(',') || '无'}`;
+    explainEl.innerHTML = `<div><strong>这根K线为什么动</strong></div>
+      <div class="muted" style="margin-top:6px;line-height:1.6">${explainSentence(meta)}（Δ${change}）</div>
+      <div class="muted" style="margin-top:6px">证据新闻（去重后 Top3）：</div>
+      <div style="margin-top:4px;line-height:1.6">${newsHtml}</div>`;
+  }
+
+  chart.subscribeCrosshairMove(param => {
+    if (lockedTime) return;
+    const d = param?.seriesData?.get(series);
+    if (!d || !param.time) return;
+    renderBarExplain(Number(param.time), d);
+  });
+
+  chart.subscribeClick(param => {
+    const d = param?.seriesData?.get(series);
+    if (!d || !param.time) {
+      lockedTime = null;
+      return;
+    }
+    const t = Number(param.time);
+    lockedTime = lockedTime === t ? null : t;
+    renderBarExplain(t, d);
   });
   charts.one = chart;
+}
+
+function applyBeginnerMode(){
+  const t = document.getElementById('beginnerToggle');
+  if (t) t.checked = beginnerMode;
+  localStorage.setItem('beginnerMode', beginnerMode ? 'on' : 'off');
 }
 
 async function refresh(){
@@ -283,6 +363,14 @@ async function refresh(){
   renderTabs(keys);
   renderPanel();
 }
+
+applyBeginnerMode();
+document.getElementById('beginnerToggle')?.addEventListener('change', (e) => {
+  beginnerMode = !!e.target.checked;
+  applyBeginnerMode();
+  renderSummary(sectorsCache);
+  renderPanel();
+});
 
 refresh();
 setInterval(refresh, 60 * 1000);
