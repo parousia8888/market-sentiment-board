@@ -36,6 +36,7 @@
       </div>
     </div>
     <div id="summaryHero" class="card" style="margin-top:14px"></div>
+    <div id="dailyBrief" class="card" style="margin-top:10px"></div>
     <div id="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px"></div>
     <div id="panel" style="margin-top:12px"></div>
   </div>
@@ -346,6 +347,40 @@ function renderSummary(sectors){
   `;
 }
 
+function renderDailyBrief(sectors){
+  const box = document.getElementById('dailyBrief');
+  const entries = Object.entries(sectors || {});
+  if (!box) return;
+  if (!entries.length) {
+    box.innerHTML = `<strong>今日摘要（基于当前样本）</strong><div class="muted" style="margin-top:6px">暂无足够样本，先关注当前主导板块与下一周期变化。</div>`;
+    return;
+  }
+
+  const strongest = [...entries].sort((a,b)=>Number(b[1].sentimentNow||0)-Number(a[1].sentimentNow||0))[0];
+  const weakest = [...entries].sort((a,b)=>Number(a[1].sentimentNow||0)-Number(b[1].sentimentNow||0))[0];
+
+  let maxEvent = null;
+  for (const [, sec] of entries) {
+    for (const h of (sec.highlights || [])) {
+      if (!maxEvent || Math.abs(Number(h.delta||0)) > Math.abs(Number(maxEvent.delta||0))) {
+        maxEvent = h;
+      }
+    }
+  }
+
+  const topReason = maxEvent?.reasons?.[0];
+  const nextWatch = `优先看 ${titleOf(strongest[0])} 是否延续，再对照 ${titleOf(weakest[0])} 是否出现反向信号。`;
+
+  box.innerHTML = `
+    <div class="row"><strong>今日摘要（基于当前样本）</strong><span class="muted">30秒复盘</span></div>
+    <div class="muted" style="margin-top:8px;line-height:1.7">
+      最强板块：<strong>${titleOf(strongest[0])}</strong>（情绪值 ${Number(strongest[1].sentimentNow || 0).toFixed(2)}）<br>
+      最弱板块：<strong>${titleOf(weakest[0])}</strong>（情绪值 ${Number(weakest[1].sentimentNow || 0).toFixed(2)}）<br>
+      最大波动：${topReason ? `${topReason.title}（${topReason.source || '未知来源'}）` : '暂无显著波动事件样本'}<br>
+      下一步关注：${nextWatch}
+    </div>`;
+}
+
 function dedupeNews(items = []) {
   const seen = new Set();
   const out = [];
@@ -456,6 +491,7 @@ async function refresh(){
   sectorsCache = data.sectors || {};
   const keys = Object.keys(sectorsCache);
   renderSummary(sectorsCache);
+  renderDailyBrief(sectorsCache);
   if (!keys.includes(current)) current = keys[0];
   renderTabs(keys);
   renderPanel();
