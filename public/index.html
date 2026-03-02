@@ -62,7 +62,7 @@ function renderPanel(){
   const highlightHTML = latestHighlights.length ? latestHighlights.map(h => `
     <div class="hl">
       <div class="muted">变动时点：${h.time} ｜ Δ${h.delta}</div>
-      ${(h.reasons || []).map(r => `<div class="news">${r.image ? `<img src="${r.image}" alt="news">` : ''}<div>• <a href="${r.url}" target="_blank">${r.title}</a><br><span class="muted">来源：${r.source}</span></div></div>`).join('')}
+      ${(h.reasons || []).map(r => `<div class="news">${r.image ? `<img src="${r.image}" alt="news">` : ''}<div>• <a href="${r.url}" target="_blank">${r.title}</a><br><span class="muted">来源：${r.source}</span><br><span class="muted">内容：${(r.content || '').slice(0,140)}...</span></div></div>`).join('')}
     </div>`).join('') : '<div class="hl muted">暂无显著变动新闻</div>';
 
   document.getElementById('panel').innerHTML = `

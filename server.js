@@ -55,14 +55,35 @@ function parseRssItems(xml = '') {
     const get = (tag) => (item.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))?.[1] || '').replace(/<!\[CDATA\[|\]\]>/g, '').trim();
     const desc = get('description');
     const img = desc.match(/<img[^>]*src=["']([^"']+)["']/i)?.[1] || '';
+    const snippet = desc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     return {
       title: get('title'),
       url: get('link'),
       pubDate: new Date(get('pubDate') || Date.now()).toISOString(),
       source: get('source') || 'Google News',
-      image: img
+      image: img,
+      snippet
     };
   }).filter(x => x.title && x.url);
+}
+
+async function fetchArticleExcerpt(url, fallback = '') {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 OpenClaw Dashboard' }, redirect: 'follow', signal: ctrl.signal });
+    clearTimeout(t);
+    const html = await res.text();
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return text.slice(0, 240) || fallback;
+  } catch {
+    return fallback || '';
+  }
 }
 
 function toKlineLikeFromArticles(articles = []) {
@@ -102,6 +123,7 @@ function buildHighlights(kline = [], articles = []) {
         source: a.domain || a.source || a.sourcecountry || 'unknown',
         url: a.url,
         image: a.image || '',
+        content: a.content || a.snippet || '',
         seen: a.seendate || a.pubDate
       }));
       highlights.push({
@@ -120,8 +142,13 @@ async function refreshSector(name, query) {
 
   const xml = await fetchText(rssUrl);
   const articles = parseRssItems(xml).slice(0, 80);
+  const enriched = await Promise.all(articles.slice(0, 12).map(async (a) => ({
+    ...a,
+    content: await fetchArticleExcerpt(a.url, a.snippet)
+  })));
+  const merged = [...enriched, ...articles.slice(12).map(a => ({ ...a, content: a.snippet }))];
 
-  const kline = toKlineLikeFromArticles(articles);
+  const kline = toKlineLikeFromArticles(merged);
   const sentimentNow = kline.at(-1)?.close ?? 0;
   const sentimentPrev = kline.at(-2)?.close ?? sentimentNow;
 
@@ -130,8 +157,8 @@ async function refreshSector(name, query) {
     sentimentNow,
     change: Number((sentimentNow - sentimentPrev).toFixed(2)),
     kline,
-    articles,
-    highlights: buildHighlights(kline, articles.map(a => ({ ...a, seendate: a.pubDate })))
+    articles: merged,
+    highlights: buildHighlights(kline, merged.map(a => ({ ...a, seendate: a.pubDate })))
   };
 }
 
