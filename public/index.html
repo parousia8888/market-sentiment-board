@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>市场情绪监控看板</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <style>
+    :root { --bg:#0b1020; --card:#121a31; --text:#e8edff; --muted:#97a3c6; --up:#22c55e; --down:#ef4444; --line:#60a5fa; }
+    *{box-sizing:border-box} body{margin:0;background:linear-gradient(135deg,#0b1020,#101a3a);color:var(--text);font-family:Inter,system-ui,Arial}
+    .wrap{max-width:1280px;margin:24px auto;padding:0 16px}
+    .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+    h1{font-size:24px;margin:0}
+    .muted{color:var(--muted);font-size:13px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:18px}
+    .card{background:rgba(18,26,49,.88);border:1px solid rgba(151,163,198,.18);border-radius:14px;padding:14px;backdrop-filter: blur(8px)}
+    .row{display:flex;justify-content:space-between;align-items:center}
+    .delta.up{color:var(--up)} .delta.down{color:var(--down)}
+    .hl{margin-top:10px;padding-top:10px;border-top:1px dashed rgba(151,163,198,.25)}
+    .hl a{color:#93c5fd;text-decoration:none}
+    .hl a:hover{text-decoration:underline}
+    canvas{margin-top:10px;max-height:180px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <h1>市场情绪监控看板</h1>
+      <div class="muted" id="meta">加载中...</div>
+    </div>
+    <div class="grid" id="grid"></div>
+  </div>
+
+<script>
+let charts = {};
+
+function titleOf(k){ return ({crypto:'Crypto / Polymarket',macro:'宏观经济',tech_ai:'AI / 科技',geopolitics:'地缘政治'})[k] || k; }
+
+function renderCard(name, data){
+  const id = `c_${name}`;
+  const deltaClass = data.change >= 0 ? 'up' : 'down';
+  const deltaSign = data.change >= 0 ? '+' : '';
+
+  const latestHighlights = (data.highlights || []).slice(-2).reverse();
+  const highlightHTML = latestHighlights.length ? latestHighlights.map(h => `
+    <div class="hl">
+      <div class="muted">变动时点: ${h.time} ｜ Δ${h.delta}</div>
+      ${(h.reasons || []).map(r => `<div>• <a href="${r.url}" target="_blank">${r.title}</a> <span class="muted">(${r.source})</span></div>`).join('')}
+    </div>
+  `).join('') : '<div class="hl muted">暂无显著变动新闻</div>';
+
+  return `
+    <div class="card">
+      <div class="row">
+        <strong>${titleOf(name)}</strong>
+        <span class="delta ${deltaClass}">${deltaSign}${data.change}</span>
+      </div>
+      <div class="muted">当前情绪值: ${data.sentimentNow ?? 0}</div>
+      <canvas id="${id}"></canvas>
+      ${highlightHTML}
+    </div>
+  `;
+}
+
+function draw(name, data){
+  const id = `c_${name}`;
+  const el = document.getElementById(id);
+  if(!el) return;
+
+  const labels = (data.kline || []).map(x => x.time).slice(-40);
+  const close = (data.kline || []).map(x => x.close).slice(-40);
+
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(el, {
+    type: 'line',
+    data: { labels, datasets: [{ data: close, borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,.18)', fill:true, tension:.25, pointRadius:0 }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display:false } },
+      scales: {
+        x: { ticks: { color:'#97a3c6', maxTicksLimit: 6 }, grid: { color:'rgba(151,163,198,.12)' } },
+        y: { ticks: { color:'#97a3c6' }, grid: { color:'rgba(151,163,198,.12)' } }
+      }
+    }
+  });
+}
+
+async function refresh(){
+  const res = await fetch('/api/data');
+  const data = await res.json();
+  document.getElementById('meta').textContent = `每5分钟自动更新 ｜ 最后更新: ${data.updatedAt || 'N/A'}`;
+
+  const sectors = data.sectors || {};
+  const grid = document.getElementById('grid');
+  grid.innerHTML = Object.entries(sectors).map(([k,v]) => renderCard(k,v)).join('');
+  Object.entries(sectors).forEach(([k,v]) => draw(k,v));
+}
+
+refresh();
+setInterval(refresh, 60 * 1000);
+</script>
+</body>
+</html>
