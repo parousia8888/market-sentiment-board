@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>市场情绪监控看板</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
   <style>
     :root { --bg:#0b1020; --card:#121a31; --text:#e8edff; --muted:#97a3c6; --up:#22c55e; --down:#ef4444; --line:#60a5fa; }
     *{box-sizing:border-box} body{margin:0;background:linear-gradient(135deg,#0b1020,#101a3a);color:var(--text);font-family:Inter,system-ui,Arial}
@@ -56,10 +56,21 @@ function renderCard(name, data){
         <span class="delta ${deltaClass}">${deltaSign}${data.change}</span>
       </div>
       <div class="muted">当前情绪值: ${data.sentimentNow ?? 0}</div>
-      <canvas id="${id}"></canvas>
+      <div id="${id}" style="height:180px;margin-top:10px"></div>
       ${highlightHTML}
     </div>
   `;
+}
+
+function parseTs(v){
+  if (!v) return Math.floor(Date.now()/1000);
+  const s = String(v);
+  if (/^\d{14}$/.test(s)) {
+    const y=s.slice(0,4), m=s.slice(4,6), d=s.slice(6,8), hh=s.slice(8,10), mm=s.slice(10,12), ss=s.slice(12,14);
+    return Math.floor(new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}Z`).getTime()/1000);
+  }
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? Math.floor(t/1000) : Math.floor(Date.now()/1000);
 }
 
 function draw(name, data){
@@ -67,23 +78,33 @@ function draw(name, data){
   const el = document.getElementById(id);
   if(!el) return;
 
-  const labels = (data.kline || []).map(x => x.time).slice(-40);
-  const close = (data.kline || []).map(x => x.close).slice(-40);
+  const raw = (data.kline || []).slice(-60).map(x => ({
+    time: parseTs(x.time),
+    open: Number(x.open ?? x.close ?? 0),
+    high: Number(x.high ?? x.close ?? 0),
+    low: Number(x.low ?? x.close ?? 0),
+    close: Number(x.close ?? 0)
+  }));
 
-  if (charts[id]) charts[id].destroy();
-  charts[id] = new Chart(el, {
-    type: 'line',
-    data: { labels, datasets: [{ data: close, borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,.18)', fill:true, tension:.25, pointRadius:0 }] },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display:false } },
-      scales: {
-        x: { ticks: { color:'#97a3c6', maxTicksLimit: 6 }, grid: { color:'rgba(151,163,198,.12)' } },
-        y: { ticks: { color:'#97a3c6' }, grid: { color:'rgba(151,163,198,.12)' } }
-      }
-    }
+  if (charts[id]?.remove) charts[id].remove();
+  const chart = LightweightCharts.createChart(el, {
+    layout: { background: { color: 'transparent' }, textColor: '#97a3c6' },
+    grid: { vertLines: { color: 'rgba(151,163,198,.12)' }, horzLines: { color: 'rgba(151,163,198,.12)' } },
+    rightPriceScale: { borderVisible: false },
+    timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+    crosshair: { mode: 1 },
+    width: el.clientWidth,
+    height: 180
   });
+
+  const series = chart.addCandlestickSeries({
+    upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
+    wickUpColor: '#22c55e', wickDownColor: '#ef4444'
+  });
+  series.setData(raw);
+  chart.timeScale().fitContent();
+
+  charts[id] = chart;
 }
 
 async function refresh(){
