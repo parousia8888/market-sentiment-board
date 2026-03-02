@@ -53,11 +53,14 @@ function parseRssItems(xml = '') {
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(m => m[1]);
   return items.map(item => {
     const get = (tag) => (item.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))?.[1] || '').replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+    const desc = get('description');
+    const img = desc.match(/<img[^>]*src=["']([^"']+)["']/i)?.[1] || '';
     return {
       title: get('title'),
       url: get('link'),
       pubDate: new Date(get('pubDate') || Date.now()).toISOString(),
       source: get('source') || 'Google News',
+      image: img
     };
   }).filter(x => x.title && x.url);
 }
@@ -98,6 +101,7 @@ function buildHighlights(kline = [], articles = []) {
         title: a.title,
         source: a.domain || a.source || a.sourcecountry || 'unknown',
         url: a.url,
+        image: a.image || '',
         seen: a.seendate || a.pubDate
       }));
       highlights.push({

@@ -12,14 +12,16 @@
     .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
     h1{font-size:24px;margin:0}
     .muted{color:var(--muted);font-size:13px}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:18px}
     .card{background:rgba(18,26,49,.88);border:1px solid rgba(151,163,198,.18);border-radius:14px;padding:14px;backdrop-filter: blur(8px)}
     .row{display:flex;justify-content:space-between;align-items:center}
     .delta.up{color:var(--up)} .delta.down{color:var(--down)}
     .hl{margin-top:10px;padding-top:10px;border-top:1px dashed rgba(151,163,198,.25)}
     .hl a{color:#93c5fd;text-decoration:none}
     .hl a:hover{text-decoration:underline}
-    canvas{margin-top:10px;max-height:180px}
+    .tab{background:#1b2648;color:#dbe5ff;border:1px solid rgba(151,163,198,.3);padding:8px 12px;border-radius:10px;cursor:pointer}
+    .tab.active{background:#2563eb;border-color:#3b82f6}
+    .news{display:flex;gap:10px;margin:8px 0}
+    .news img{width:72px;height:48px;object-fit:cover;border-radius:6px;border:1px solid rgba(151,163,198,.25)}
   </style>
 </head>
 <body>
@@ -28,94 +30,77 @@
       <h1>市场情绪监控看板</h1>
       <div class="muted" id="meta">加载中...</div>
     </div>
-    <div class="grid" id="grid"></div>
+    <div id="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px"></div>
+    <div id="panel" style="margin-top:12px"></div>
   </div>
 
 <script>
 let charts = {};
+let current = 'crypto';
+let sectorsCache = {};
 
-function titleOf(k){ return ({crypto:'Crypto / Polymarket',macro:'宏观经济',tech_ai:'AI / 科技',geopolitics:'地缘政治'})[k] || k; }
-
-function renderCard(name, data){
-  const id = `c_${name}`;
-  const deltaClass = data.change >= 0 ? 'up' : 'down';
-  const deltaSign = data.change >= 0 ? '+' : '';
-
-  const latestHighlights = (data.highlights || []).slice(-2).reverse();
-  const highlightHTML = latestHighlights.length ? latestHighlights.map(h => `
-    <div class="hl">
-      <div class="muted">变动时点: ${h.time} ｜ Δ${h.delta}</div>
-      ${(h.reasons || []).map(r => `<div>• <a href="${r.url}" target="_blank">${r.title}</a> <span class="muted">(${r.source})</span></div>`).join('')}
-    </div>
-  `).join('') : '<div class="hl muted">暂无显著变动新闻</div>';
-
-  return `
-    <div class="card">
-      <div class="row">
-        <strong>${titleOf(name)}</strong>
-        <span class="delta ${deltaClass}">${deltaSign}${data.change}</span>
-      </div>
-      <div class="muted">当前情绪值: ${data.sentimentNow ?? 0}</div>
-      <div id="${id}" style="height:180px;margin-top:10px"></div>
-      ${highlightHTML}
-    </div>
-  `;
-}
+function titleOf(k){ return ({crypto:'加密 / Polymarket',macro:'宏观经济',tech_ai:'AI / 科技',geopolitics:'地缘政治'})[k] || k; }
 
 function parseTs(v){
-  if (!v) return Math.floor(Date.now()/1000);
-  const s = String(v);
-  if (/^\d{14}$/.test(s)) {
-    const y=s.slice(0,4), m=s.slice(4,6), d=s.slice(6,8), hh=s.slice(8,10), mm=s.slice(10,12), ss=s.slice(12,14);
-    return Math.floor(new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}Z`).getTime()/1000);
-  }
-  const t = Date.parse(s);
+  const t = Date.parse(v);
   return Number.isFinite(t) ? Math.floor(t/1000) : Math.floor(Date.now()/1000);
 }
 
-function draw(name, data){
-  const id = `c_${name}`;
-  const el = document.getElementById(id);
+function renderTabs(keys){
+  const tabs = document.getElementById('tabs');
+  tabs.innerHTML = keys.map(k => `<button class="tab ${k===current?'active':''}" data-k="${k}">${titleOf(k)}</button>`).join('');
+  tabs.querySelectorAll('button').forEach(b => b.onclick = () => { current = b.dataset.k; renderPanel(); renderTabs(keys); });
+}
+
+function renderPanel(){
+  const data = sectorsCache[current];
+  if (!data) return;
+  const deltaClass = data.change >= 0 ? 'up' : 'down';
+  const deltaSign = data.change >= 0 ? '+' : '';
+  const latestHighlights = (data.highlights || []).slice(-3).reverse();
+
+  const highlightHTML = latestHighlights.length ? latestHighlights.map(h => `
+    <div class="hl">
+      <div class="muted">变动时点：${h.time} ｜ Δ${h.delta}</div>
+      ${(h.reasons || []).map(r => `<div class="news">${r.image ? `<img src="${r.image}" alt="news">` : ''}<div>• <a href="${r.url}" target="_blank">${r.title}</a><br><span class="muted">来源：${r.source}</span></div></div>`).join('')}
+    </div>`).join('') : '<div class="hl muted">暂无显著变动新闻</div>';
+
+  document.getElementById('panel').innerHTML = `
+    <div class="card">
+      <div class="row"><strong>${titleOf(current)}</strong><span class="delta ${deltaClass}">${deltaSign}${data.change}</span></div>
+      <div class="muted">当前情绪值：${data.sentimentNow ?? 0}</div>
+      <div id="chart_one" style="height:280px;margin-top:10px"></div>
+      ${highlightHTML}
+    </div>`;
+
+  drawOne(data);
+}
+
+function drawOne(data){
+  const el = document.getElementById('chart_one');
   if(!el) return;
-
-  const raw = (data.kline || []).slice(-60).map(x => ({
-    time: parseTs(x.time),
-    open: Number(x.open ?? x.close ?? 0),
-    high: Number(x.high ?? x.close ?? 0),
-    low: Number(x.low ?? x.close ?? 0),
-    close: Number(x.close ?? 0)
-  }));
-
-  if (charts[id]?.remove) charts[id].remove();
+  const raw = (data.kline || []).slice(-80).map(x => ({ time: parseTs(x.time), open:+x.open, high:+x.high, low:+x.low, close:+x.close }));
+  if (charts.one?.remove) charts.one.remove();
   const chart = LightweightCharts.createChart(el, {
     layout: { background: { color: 'transparent' }, textColor: '#97a3c6' },
     grid: { vertLines: { color: 'rgba(151,163,198,.12)' }, horzLines: { color: 'rgba(151,163,198,.12)' } },
-    rightPriceScale: { borderVisible: false },
-    timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
-    crosshair: { mode: 1 },
-    width: el.clientWidth,
-    height: 180
+    rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false, timeVisible: true }, width: el.clientWidth, height: 280
   });
-
-  const series = chart.addCandlestickSeries({
-    upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
-    wickUpColor: '#22c55e', wickDownColor: '#ef4444'
-  });
+  const series = chart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', borderVisible:false, wickUpColor:'#22c55e', wickDownColor:'#ef4444' });
   series.setData(raw);
   chart.timeScale().fitContent();
-
-  charts[id] = chart;
+  charts.one = chart;
 }
 
 async function refresh(){
   const res = await fetch('/api/data');
   const data = await res.json();
-  document.getElementById('meta').textContent = `每5分钟自动更新 ｜ 最后更新: ${data.updatedAt || 'N/A'}`;
-
-  const sectors = data.sectors || {};
-  const grid = document.getElementById('grid');
-  grid.innerHTML = Object.entries(sectors).map(([k,v]) => renderCard(k,v)).join('');
-  Object.entries(sectors).forEach(([k,v]) => draw(k,v));
+  document.getElementById('meta').textContent = `每5分钟自动更新 ｜ 最后更新：${data.updatedAt || 'N/A'}`;
+  sectorsCache = data.sectors || {};
+  const keys = Object.keys(sectorsCache);
+  if (!keys.includes(current)) current = keys[0];
+  renderTabs(keys);
+  renderPanel();
 }
 
 refresh();
