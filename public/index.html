@@ -94,6 +94,11 @@ function buildExplanation(data){
   const topPlus = topItems(now.plusMap, 3);
   const topMinus = topItems(now.minusMap, 3);
 
+  const plusMax = Math.max(0, ...Object.values(now.plusMap));
+  const minusMax = Math.max(0, ...Object.values(now.minusMap));
+  const keywordTotal = now.pos + now.neg;
+  const topConcentration = keywordTotal ? Math.max(plusMax, minusMax) / keywordTotal : 0;
+
   const impactNews = ((data.highlights || []).at(-1)?.reasons || []).slice(0,3);
   const signalDelta = (now.pos - now.neg) - (prev.pos - prev.neg);
   const trendText = signalDelta > 1 ? '驱动增强' : signalDelta < -1 ? '驱动减弱' : '驱动持平';
@@ -106,7 +111,8 @@ function buildExplanation(data){
     impactNews,
     trendText,
     nowNews: now.news,
-    prevNews: prev.news
+    prevNews: prev.news,
+    topConcentration
   };
 }
 
@@ -144,18 +150,48 @@ function getLinkageAdvice(currentSector, nt, explanation){
 
   const base = plans[currentSector] || plans.crypto;
   const signalGap = Math.abs((explanation.posCount || 0) - (explanation.negCount || 0));
-  const weakSignal = (explanation.nowNews || 0) < 8 || signalGap <= 1;
+  const isConflict = signalGap <= 1;
+  const lowConcentration = (explanation.topConcentration || 0) < 0.35;
 
-  let action = '若 A、B 两个板块同向，再提高趋势置信度；若背离，先按噪音处理。';
-  if (nt.label === '强趋势') action = '优先盯 A 的延续信号，再看 B 是否同步放大，防止追高。';
-  if (nt.label === '短期噪音' || weakSignal) action = '先观察 1 个周期，若 A 仍同向再看 B，避免被短噪音带节奏。';
+  // 规则1：仅初步趋势/强趋势给“先看A再看B”
+  if (nt.label === '短期噪音') {
+    return {
+      ...base,
+      mode: 'observe',
+      triggerText: '触发条件：当前为短期噪音，仅给观察建议。',
+      action: '分歧中，先观察1个周期，不做板块联动判断。'
+    };
+  }
+
+  // 规则3：信号冲突优先降级
+  if (isConflict) {
+    return {
+      ...base,
+      mode: 'observe',
+      triggerText: '触发条件：正负信号接近，当前分歧中。',
+      action: '分歧中，先观察1个周期；若下一周期仍同向再联动。'
+    };
+  }
+
+  // 规则2：关键词集中度不足降级为候选Top2
+  if (lowConcentration) {
+    return {
+      ...base,
+      mode: 'candidate',
+      triggerText: '触发条件：主导关键词集中度不足，降级为候选Top2。',
+      action: `候选联动：${titleOf(base.first)} / ${titleOf(base.second)}，先看哪个先出现同向信号。`
+    };
+  }
+
+  const action = nt.label === '强趋势'
+    ? '先看A确认延续，再看B是否同步放大；同向则提高置信度。'
+    : '先看A确认方向，再看B是否跟随；同向再提升置信度。';
 
   return {
     ...base,
-    action,
-    triggerText: weakSignal
-      ? '触发条件：样本较少或多空接近，先保守联动。'
-      : '触发条件：当前信号有方向性，可按联动顺序跟踪。'
+    mode: 'link',
+    triggerText: '触发条件：趋势成立且关键词集中，可按联动顺序跟踪。',
+    action
   };
 }
 
@@ -189,9 +225,9 @@ function renderPanel(){
       <div class="hl" style="margin-top:10px">
         <div><strong>联动查看建议</strong></div>
         <div class="muted" style="margin-top:6px;line-height:1.6">
-          先看：${titleOf(linkage.first)}（${linkage.whyFirst}）<br>
-          再看：${titleOf(linkage.second)}（${linkage.whySecond}）<br>
-          因果链：${linkage.chain}<br>
+          ${linkage.mode === 'link' ? `先看：${titleOf(linkage.first)}（${linkage.whyFirst}）<br>再看：${titleOf(linkage.second)}（${linkage.whySecond}）<br>因果链：${linkage.chain}<br>` : ''}
+          ${linkage.mode === 'candidate' ? `候选Top2：${titleOf(linkage.first)} / ${titleOf(linkage.second)}<br>因果链（参考）：${linkage.chain}<br>` : ''}
+          ${linkage.mode === 'observe' ? `因果链（观察版）：${linkage.chain}<br>` : ''}
           ${linkage.triggerText}<br>
           操作建议：${linkage.action}
         </div>
