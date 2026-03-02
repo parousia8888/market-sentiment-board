@@ -302,6 +302,8 @@ app.get('/api/data', (req, res) => {
 loadCache();
 scheduleRefresh().catch((e) => console.error('initial schedule failed:', e.message));
 
-app.listen(PORT, () => {
-  console.log(`dashboard on http://localhost:${PORT}`);
+const server = app.listen(PORT, () => {
+  const addr = server.address();
+  const actualPort = typeof addr === 'object' && addr ? addr.port : PORT;
+  console.log(`dashboard on http://localhost:${actualPort}`);
 });
