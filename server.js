@@ -83,22 +83,25 @@ function parseRssItems(xml = '') {
   }).filter(x => x.title && x.url);
 }
 
-async function fetchArticleExcerpt(url, fallback = '') {
+async function fetchArticleMeta(url, fallback = '', fallbackImage = '') {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
     const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 OpenClaw Dashboard' }, redirect: 'follow', signal: ctrl.signal });
     clearTimeout(t);
     const html = await res.text();
+    const og = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
+      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1]
+      || fallbackImage;
     const text = html
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
       .replace(/<style[\s\S]*?<\/style>/gi, ' ')
       .replace(/<[^>]+>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    return text.slice(0, 240) || fallback;
+    return { content: text.slice(0, 240) || fallback, image: og || fallbackImage || '' };
   } catch {
-    return fallback || '';
+    return { content: fallback || '', image: fallbackImage || '' };
   }
 }
 
@@ -170,15 +173,23 @@ async function refreshSector(name, query) {
 
   const xml = await fetchText(rssUrl);
   const articles = parseRssItems(xml).slice(0, 80);
-  const enriched = await Promise.all(articles.slice(0, 12).map(async (a) => {
-    const content = await fetchArticleExcerpt(a.url, a.snippet);
+  const enriched = await Promise.all(articles.slice(0, 30).map(async (a) => {
+    const meta = await fetchArticleMeta(a.url, a.snippet, a.image);
     const [titleZh, contentZh] = await Promise.all([
       translateToZh(a.title),
-      translateToZh(content)
+      translateToZh(meta.content)
     ]);
-    return { ...a, content, titleZh, contentZh };
+    return { ...a, image: meta.image || a.image, content: meta.content, titleZh, contentZh };
   }));
-  const merged = [...enriched, ...articles.slice(12).map(a => ({ ...a, content: a.snippet, titleZh: a.title, contentZh: a.snippet }))];
+
+  const rest = await Promise.all(articles.slice(30).map(async (a) => ({
+    ...a,
+    content: a.snippet,
+    titleZh: await translateToZh(a.title),
+    contentZh: await translateToZh(a.snippet)
+  })));
+
+  const merged = [...enriched, ...rest];
 
   const kline = toKlineLikeFromArticles(merged);
   const sentimentNow = kline.at(-1)?.close ?? 0;
