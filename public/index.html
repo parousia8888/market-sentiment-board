@@ -64,13 +64,70 @@ function scoreBand(v){
   return { label: '重度偏空', color: '#ef4444' };
 }
 
-function renderPanel(){ 
+function topItems(mapObj, n=3){
+  return Object.entries(mapObj).sort((a,b)=>b[1]-a[1]).slice(0,n).map(x=>x[0]);
+}
+
+function buildExplanation(data){
+  const recentBars = (data.kline || []).slice(-12); // 约近1小时（5分钟桶）
+  const prevBars = (data.kline || []).slice(-24, -12);
+
+  const countDir = (bars) => bars.reduce((acc, b) => {
+    const plus = b.analysis?.plus || [];
+    const minus = b.analysis?.minus || [];
+    acc.pos += plus.length;
+    acc.neg += minus.length;
+    acc.news += Number(b.analysis?.newsCount || 0);
+    plus.forEach(k => acc.plusMap[k] = (acc.plusMap[k] || 0) + 1);
+    minus.forEach(k => acc.minusMap[k] = (acc.minusMap[k] || 0) + 1);
+    return acc;
+  }, { pos:0, neg:0, news:0, plusMap:{}, minusMap:{} });
+
+  const now = countDir(recentBars);
+  const prev = countDir(prevBars);
+  const topPlus = topItems(now.plusMap, 3);
+  const topMinus = topItems(now.minusMap, 3);
+
+  const impactNews = ((data.highlights || []).at(-1)?.reasons || []).slice(0,3);
+  const signalDelta = (now.pos - now.neg) - (prev.pos - prev.neg);
+  const trendText = signalDelta > 1 ? '驱动增强' : signalDelta < -1 ? '驱动减弱' : '驱动持平';
+
+  return {
+    posCount: now.pos,
+    negCount: now.neg,
+    topPlus,
+    topMinus,
+    impactNews,
+    trendText,
+    nowNews: now.news,
+    prevNews: prev.news
+  };
+}
+
+function renderPanel(){  
   const data = sectorsCache[current];
   if (!data) return;
   const deltaClass = data.change >= 0 ? 'up' : 'down';
   const deltaSign = data.change >= 0 ? '+' : '';
   const latestHighlights = (data.highlights || []).slice(-3).reverse();
   const band = scoreBand(data.sentimentNow ?? 0);
+
+  const explanation = buildExplanation(data);
+  const explainNews = (explanation.impactNews || []).map(n => `• <a href="${n.url}" target="_blank">${n.title}</a>（${n.source || '未知来源'}）`).join('<br>') || '• 暂无高影响新闻样本';
+
+  const explanationHTML = `
+    <div class="hl">
+      <div><strong>为什么变化（近1小时）</strong></div>
+      <div class="muted" style="margin-top:6px;line-height:1.6">
+        正向信号 ${explanation.posCount} 条，负向信号 ${explanation.negCount} 条；${explanation.trendText}。<br>
+        主导关键词：
+        <span style="color:#86efac">+ ${explanation.topPlus.join('、') || '无'}</span> /
+        <span style="color:#fca5a5">- ${explanation.topMinus.join('、') || '无'}</span><br>
+        与前一小时对比：新闻样本 ${explanation.prevNews} → ${explanation.nowNews}
+      </div>
+      <div class="muted" style="margin-top:8px">影响最大新闻（Top 3）：</div>
+      <div style="margin-top:4px;line-height:1.6">${explainNews}</div>
+    </div>`;
 
   const highlightHTML = latestHighlights.length ? latestHighlights.map(h => `
     <div class="hl">
@@ -96,6 +153,7 @@ function renderPanel(){
         <span style="color:#f87171">-5~&lt;-2 中度偏空</span> ｜
         <span style="color:#ef4444">≤-5 重度偏空</span>
       </div>
+      ${explanationHTML}
       <div id="chart_one" style="height:280px;margin-top:10px"></div>
       ${highlightHTML}
     </div>`;
