@@ -62,7 +62,7 @@ function renderPanel(){
   const highlightHTML = latestHighlights.length ? latestHighlights.map(h => `
     <div class="hl">
       <div class="muted">变动时点：${h.time} ｜ Δ${h.delta}</div>
-      ${(h.reasons || []).map(r => `<div class="news">${r.image ? `<img src="${r.image}" alt="news">` : ''}<div>• <a href="${r.url}" target="_blank">${r.title}</a><br><span class="muted">来源：${r.source}</span><br><span class="muted">内容：${(r.content || '').slice(0,140)}...</span></div></div>`).join('')}
+      ${(h.reasons || []).map(r => `<div class="news">${r.image ? `<img src="${r.image}" alt="news">` : ''}<div>• <a href="${r.url}" target="_blank">${r.title}</a><br><span class="muted">来源：${r.source}</span><br><span class="muted">内容：${(r.content || '').slice(0,140)}...</span><br><span class="muted">打分依据：+${(r.scoreBasis?.pos||[]).join(',')||'无'} / -${(r.scoreBasis?.neg||[]).join(',')||'无'}</span></div></div>`).join('')}
     </div>`).join('') : '<div class="hl muted">暂无显著变动新闻</div>';
 
   document.getElementById('panel').innerHTML = `
@@ -79,6 +79,8 @@ function renderPanel(){
 function drawOne(data){
   const el = document.getElementById('chart_one');
   if(!el) return;
+  el.style.position = 'relative';
+  const detailMap = new Map((data.kline || []).slice(-80).map(x => [parseTs(x.time), x.analysis || {}]));
   const raw = (data.kline || []).slice(-80).map(x => ({ time: parseTs(x.time), open:+x.open, high:+x.high, low:+x.low, close:+x.close }));
   if (charts.one?.remove) charts.one.remove();
   const chart = LightweightCharts.createChart(el, {
@@ -89,6 +91,20 @@ function drawOne(data){
   const series = chart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', borderVisible:false, wickUpColor:'#22c55e', wickDownColor:'#ef4444' });
   series.setData(raw);
   chart.timeScale().fitContent();
+
+  const tip = document.createElement('div');
+  tip.style.cssText = 'position:absolute;right:8px;top:8px;background:#0b1020cc;border:1px solid #2b3f74;padding:8px;border-radius:8px;font-size:12px;color:#dbe5ff;max-width:52%;pointer-events:none';
+  tip.innerHTML = '悬浮柱子查看涨跌解析';
+  el.appendChild(tip);
+
+  chart.subscribeCrosshairMove(param => {
+    const d = param?.seriesData?.get(series);
+    if (!d || !param.time) return;
+    const t = Number(param.time);
+    const meta = detailMap.get(t) || {};
+    const change = (d.close - d.open).toFixed(2);
+    tip.innerHTML = `涨跌：${change}<br>新闻数：${meta.newsCount || 0}<br>加分词：${(meta.plus||[]).join(',') || '无'}<br>减分词：${(meta.minus||[]).join(',') || '无'}<br>样本：${(meta.sample||[]).join('；') || '无'}`;
+  });
   charts.one = chart;
 }
 

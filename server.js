@@ -20,6 +20,7 @@ const SECTORS = {
 
 const POS = ['surge','beat','growth','record','bull','approval','win','rally','up','optimism','breakthrough'];
 const NEG = ['drop','fall','miss','ban','hack','war','crackdown','loss','down','fear','lawsuit','recession'];
+const trCache = new Map();
 
 let cache = { updatedAt: null, sectors: {} };
 
@@ -43,10 +44,25 @@ async function fetchText(url) {
 
 function scoreTitle(title = '') {
   const t = title.toLowerCase();
-  let s = 0;
-  for (const p of POS) if (t.includes(p)) s += 1;
-  for (const n of NEG) if (t.includes(n)) s -= 1;
-  return s;
+  const pos = POS.filter(p => t.includes(p));
+  const neg = NEG.filter(n => t.includes(n));
+  return { score: pos.length - neg.length, pos, neg };
+}
+
+async function translateToZh(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  if (trCache.has(raw)) return trCache.get(raw);
+  try {
+    const u = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q=${encodeURIComponent(raw.slice(0, 500))}`;
+    const res = await fetch(u, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const j = await res.json();
+    const out = (j?.[0] || []).map(x => x?.[0] || '').join('') || raw;
+    trCache.set(raw, out);
+    return out;
+  } catch {
+    return raw;
+  }
 }
 
 function parseRssItems(xml = '') {
@@ -95,19 +111,30 @@ function toKlineLikeFromArticles(articles = []) {
     ts.setUTCMinutes(min, 0, 0);
     const k = ts.toISOString();
     const prev = buckets.get(k) || [];
-    prev.push(scoreTitle(a.title));
+    prev.push({ article: a, analysis: scoreTitle(a.title) });
     buckets.set(k, prev);
   }
 
   let lastClose = 0;
   const out = [];
   for (const [time, vals] of [...buckets.entries()].sort((a,b)=>a[0].localeCompare(b[0]))) {
-    const avg = vals.reduce((x,y)=>x+y,0) / vals.length;
+    const avg = vals.reduce((x,y)=>x+y.analysis.score,0) / vals.length;
+    const pos = [...new Set(vals.flatMap(v => v.analysis.pos))];
+    const neg = [...new Set(vals.flatMap(v => v.analysis.neg))];
     const open = Number(lastClose.toFixed(2));
     const close = Number((lastClose + avg).toFixed(2));
     const high = Number(Math.max(open, close, open + Math.abs(avg) * 0.6).toFixed(2));
     const low = Number(Math.min(open, close, close - Math.abs(avg) * 0.6).toFixed(2));
-    out.push({ time, open, high, low, close });
+    out.push({
+      time, open, high, low, close,
+      analysis: {
+        newsCount: vals.length,
+        avgScore: Number(avg.toFixed(2)),
+        plus: pos,
+        minus: neg,
+        sample: vals.slice(0,2).map(v => v.article.titleZh || v.article.title)
+      }
+    });
     lastClose = close;
   }
   return out.slice(-80);
@@ -119,11 +146,12 @@ function buildHighlights(kline = [], articles = []) {
     const delta = kline[i].close - kline[i - 1].close;
     if (Math.abs(delta) >= 0.8) {
       const picked = articles.slice(0, 3).map(a => ({
-        title: a.title,
+        title: a.titleZh || a.title,
         source: a.domain || a.source || a.sourcecountry || 'unknown',
         url: a.url,
         image: a.image || '',
-        content: a.content || a.snippet || '',
+        content: a.contentZh || a.content || a.snippet || '',
+        scoreBasis: scoreTitle(a.title),
         seen: a.seendate || a.pubDate
       }));
       highlights.push({
@@ -142,11 +170,15 @@ async function refreshSector(name, query) {
 
   const xml = await fetchText(rssUrl);
   const articles = parseRssItems(xml).slice(0, 80);
-  const enriched = await Promise.all(articles.slice(0, 12).map(async (a) => ({
-    ...a,
-    content: await fetchArticleExcerpt(a.url, a.snippet)
-  })));
-  const merged = [...enriched, ...articles.slice(12).map(a => ({ ...a, content: a.snippet }))];
+  const enriched = await Promise.all(articles.slice(0, 12).map(async (a) => {
+    const content = await fetchArticleExcerpt(a.url, a.snippet);
+    const [titleZh, contentZh] = await Promise.all([
+      translateToZh(a.title),
+      translateToZh(content)
+    ]);
+    return { ...a, content, titleZh, contentZh };
+  }));
+  const merged = [...enriched, ...articles.slice(12).map(a => ({ ...a, content: a.snippet, titleZh: a.title, contentZh: a.snippet }))];
 
   const kline = toKlineLikeFromArticles(merged);
   const sentimentNow = kline.at(-1)?.close ?? 0;
