@@ -18,6 +18,9 @@ const SECTORS = {
   geopolitics: 'china OR us election OR taiwan OR russia OR middle east'
 };
 
+const POS = ['surge','beat','growth','record','bull','approval','win','rally','up','optimism','breakthrough'];
+const NEG = ['drop','fall','miss','ban','hack','war','crackdown','loss','down','fear','lawsuit','recession'];
+
 let cache = { updatedAt: null, sectors: {} };
 
 function loadCache() {
@@ -32,22 +35,58 @@ function saveCache() {
   fs.writeFileSync(DATA_PATH, JSON.stringify(cache, null, 2));
 }
 
-async function fetchJson(url) {
+async function fetchText(url) {
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 OpenClaw Dashboard' } });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return await res.json();
+  return await res.text();
 }
 
-function toKlineLike(points = []) {
-  // Convert tone points to pseudo-OHLC per point interval (visual K-line style)
-  return points.map((p, i) => {
-    const prev = points[i - 1]?.value ?? p.value;
-    const open = Number(prev.toFixed(2));
-    const close = Number((p.value ?? 0).toFixed(2));
-    const high = Number(Math.max(open, close, open + Math.random() * 0.5).toFixed(2));
-    const low = Number(Math.min(open, close, close - Math.random() * 0.5).toFixed(2));
-    return { time: p.date, open, high, low, close };
-  });
+function scoreTitle(title = '') {
+  const t = title.toLowerCase();
+  let s = 0;
+  for (const p of POS) if (t.includes(p)) s += 1;
+  for (const n of NEG) if (t.includes(n)) s -= 1;
+  return s;
+}
+
+function parseRssItems(xml = '') {
+  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(m => m[1]);
+  return items.map(item => {
+    const get = (tag) => (item.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))?.[1] || '').replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+    return {
+      title: get('title'),
+      url: get('link'),
+      pubDate: new Date(get('pubDate') || Date.now()).toISOString(),
+      source: get('source') || 'Google News',
+    };
+  }).filter(x => x.title && x.url);
+}
+
+function toKlineLikeFromArticles(articles = []) {
+  const sorted = [...articles].sort((a,b) => new Date(a.pubDate) - new Date(b.pubDate));
+  const buckets = new Map();
+  for (const a of sorted) {
+    const ts = new Date(a.pubDate);
+    const min = Math.floor(ts.getUTCMinutes() / 5) * 5;
+    ts.setUTCMinutes(min, 0, 0);
+    const k = ts.toISOString();
+    const prev = buckets.get(k) || [];
+    prev.push(scoreTitle(a.title));
+    buckets.set(k, prev);
+  }
+
+  let lastClose = 0;
+  const out = [];
+  for (const [time, vals] of [...buckets.entries()].sort((a,b)=>a[0].localeCompare(b[0]))) {
+    const avg = vals.reduce((x,y)=>x+y,0) / vals.length;
+    const open = Number(lastClose.toFixed(2));
+    const close = Number((lastClose + avg).toFixed(2));
+    const high = Number(Math.max(open, close, open + Math.abs(avg) * 0.6).toFixed(2));
+    const low = Number(Math.min(open, close, close - Math.abs(avg) * 0.6).toFixed(2));
+    out.push({ time, open, high, low, close });
+    lastClose = close;
+  }
+  return out.slice(-80);
 }
 
 function buildHighlights(kline = [], articles = []) {
@@ -57,9 +96,9 @@ function buildHighlights(kline = [], articles = []) {
     if (Math.abs(delta) >= 0.8) {
       const picked = articles.slice(0, 3).map(a => ({
         title: a.title,
-        source: a.domain || a.sourcecountry || 'unknown',
+        source: a.domain || a.source || a.sourcecountry || 'unknown',
         url: a.url,
-        seen: a.seendate
+        seen: a.seendate || a.pubDate
       }));
       highlights.push({
         time: kline[i].time,
@@ -73,28 +112,12 @@ function buildHighlights(kline = [], articles = []) {
 
 async function refreshSector(name, query) {
   const q = encodeURIComponent(query);
-  const toneUrl = `https://api.gdeltproject.org/api/v2/doc/doc?query=${q}&mode=ToneChart&format=json&maxrecords=250`;
-  const listUrl = `https://api.gdeltproject.org/api/v2/doc/doc?query=${q}&mode=ArtList&format=json&maxrecords=30&sort=DateDesc`;
+  const rssUrl = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
 
-  const [toneData, listData] = await Promise.all([
-    fetchJson(toneUrl).catch(() => ({ tone: [] })),
-    fetchJson(listUrl).catch(() => ({ articles: [] }))
-  ]);
+  const xml = await fetchText(rssUrl);
+  const articles = parseRssItems(xml).slice(0, 80);
 
-  const tonePoints = (toneData?.tone || toneData?.timeline || []).map(x => ({
-    date: x.date || x.datetime || x.timebin,
-    value: Number(x.value ?? x.tone ?? 0)
-  })).filter(x => x.date);
-
-  const articles = (listData?.articles || []).map(a => ({
-    title: a.title,
-    url: a.url,
-    domain: a.domain,
-    sourcecountry: a.sourcecountry,
-    seendate: a.seendate
-  }));
-
-  const kline = toKlineLike(tonePoints);
+  const kline = toKlineLikeFromArticles(articles);
   const sentimentNow = kline.at(-1)?.close ?? 0;
   const sentimentPrev = kline.at(-2)?.close ?? sentimentNow;
 
@@ -104,7 +127,7 @@ async function refreshSector(name, query) {
     change: Number((sentimentNow - sentimentPrev).toFixed(2)),
     kline,
     articles,
-    highlights: buildHighlights(kline, articles)
+    highlights: buildHighlights(kline, articles.map(a => ({ ...a, seendate: a.pubDate })))
   };
 }
 
