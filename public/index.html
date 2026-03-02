@@ -124,7 +124,7 @@ function renderPanel(){
 
   const explanationHTML = `
     <div class="hl">
-      <div class="row"><strong>为什么变化（近1小时） ${beginnerMode ? '· 先看这里②' : ''}</strong><span style="padding:2px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35)">${nt.label}</span></div>
+      <div class="row"><strong>为什么变化（近1小时） ${beginnerMode ? '· 先看这里③' : ''}</strong><span style="padding:2px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35)">${nt.label}</span></div>
       <div class="muted" style="margin-top:6px;line-height:1.6">
         判定依据：连续性${nt.continuity}，样本量${nt.sampleCount}条，跨源一致性${nt.sourceConsistency}。<br>
         正向信号 ${explanation.posCount} 条，负向信号 ${explanation.negCount} 条；${explanation.trendText}。<br>
@@ -166,7 +166,7 @@ function renderPanel(){
       </div>
       ${explanationHTML}
       <div id="chart_one" style="height:280px;margin-top:10px"></div>
-      <div id="bar_explain" class="hl muted">${beginnerMode ? '先看这里③：点击或悬浮 K 线柱，直接看“这根K线为什么动”。' : '点击或悬浮 K 线柱，查看“这根K线为什么动”。'}</div>
+      <div id="bar_explain" class="hl muted">${beginnerMode ? '先看这里④：点击或悬浮 K 线柱，直接看“这根K线为什么动”。' : '点击或悬浮 K 线柱，查看“这根K线为什么动”。'}</div>
       ${highlightHTML}
     </div>`;
 
@@ -245,7 +245,8 @@ function renderSummary(sectors){
       主要由<strong>${titleOf(reason?.sector || 'crypto')}</strong>相关新闻驱动，当前可信度<strong>${conf}</strong>，
       趋势标签：<strong>${trendTag}</strong>。
     </div>
-    <div class="muted" style="margin-top:8px">说明：可信度基于变动一致性、样本数量与数据可用性。</div>
+    <div class="muted" style="margin-top:8px">先看顺序：① 一句话总结 ｜ ② 趋势标签 ｜ ③ 为什么变化。</div>
+    <div class="muted" style="margin-top:4px">说明：可信度基于变动一致性、样本数量与数据可用性。</div>
   `;
 }
 
