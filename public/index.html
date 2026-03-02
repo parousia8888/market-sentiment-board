@@ -110,7 +110,56 @@ function buildExplanation(data){
   };
 }
 
-function renderPanel(){  
+function getLinkageAdvice(currentSector, nt, explanation){
+  const plans = {
+    geopolitics: {
+      first: 'macro',
+      second: 'crypto',
+      chain: '地缘政治 → 宏观预期 → 加密避险交易',
+      whyFirst: '先确认利率/通胀预期是否被事件推高',
+      whySecond: '再看避险情绪是否传导到加密市场'
+    },
+    macro: {
+      first: 'tech_ai',
+      second: 'crypto',
+      chain: '宏观预期 → 科技估值情绪 → 加密风险偏好',
+      whyFirst: '先看科技板块是否同步放大',
+      whySecond: '再看加密是否跟随风险偏好变化'
+    },
+    crypto: {
+      first: 'macro',
+      second: 'geopolitics',
+      chain: '加密风险偏好 → 宏观流动性预期 → 地缘风险共振',
+      whyFirst: '先确认流动性预期是否支持当前波动',
+      whySecond: '再看是否有地缘事件放大情绪'
+    },
+    tech_ai: {
+      first: 'macro',
+      second: 'crypto',
+      chain: '科技情绪变化 → 宏观风险偏好 → 加密交易热度',
+      whyFirst: '先看宏观预期是否同向',
+      whySecond: '再看加密交易热度是否跟涨/跟跌'
+    }
+  };
+
+  const base = plans[currentSector] || plans.crypto;
+  const signalGap = Math.abs((explanation.posCount || 0) - (explanation.negCount || 0));
+  const weakSignal = (explanation.nowNews || 0) < 8 || signalGap <= 1;
+
+  let action = '若 A、B 两个板块同向，再提高趋势置信度；若背离，先按噪音处理。';
+  if (nt.label === '强趋势') action = '优先盯 A 的延续信号，再看 B 是否同步放大，防止追高。';
+  if (nt.label === '短期噪音' || weakSignal) action = '先观察 1 个周期，若 A 仍同向再看 B，避免被短噪音带节奏。';
+
+  return {
+    ...base,
+    action,
+    triggerText: weakSignal
+      ? '触发条件：样本较少或多空接近，先保守联动。'
+      : '触发条件：当前信号有方向性，可按联动顺序跟踪。'
+  };
+}
+
+function renderPanel(){   
   const data = sectorsCache[current];
   if (!data) return;
   const deltaClass = data.change >= 0 ? 'up' : 'down';
@@ -120,6 +169,7 @@ function renderPanel(){
 
   const explanation = buildExplanation(data);
   const nt = classifyNoiseTrend(data);
+  const linkage = getLinkageAdvice(current, nt, explanation);
   const explainNews = (explanation.impactNews || []).map(n => `• <a href="${n.url}" target="_blank">${n.title}</a>（${n.source || '未知来源'}）`).join('<br>') || '• 暂无高影响新闻样本';
 
   const explanationHTML = `
@@ -136,6 +186,16 @@ function renderPanel(){
       </div>
       <div class="muted" style="margin-top:8px">影响最大新闻（Top 3）：</div>
       <div style="margin-top:4px;line-height:1.6">${explainNews}</div>
+      <div class="hl" style="margin-top:10px">
+        <div><strong>联动查看建议</strong></div>
+        <div class="muted" style="margin-top:6px;line-height:1.6">
+          先看：${titleOf(linkage.first)}（${linkage.whyFirst}）<br>
+          再看：${titleOf(linkage.second)}（${linkage.whySecond}）<br>
+          因果链：${linkage.chain}<br>
+          ${linkage.triggerText}<br>
+          操作建议：${linkage.action}
+        </div>
+      </div>
     </div>`;
 
   const highlightHTML = beginnerMode
