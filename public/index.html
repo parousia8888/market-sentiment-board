@@ -53,12 +53,24 @@ function renderTabs(keys){
   tabs.querySelectorAll('button').forEach(b => b.onclick = () => { current = b.dataset.k; renderPanel(); renderTabs(keys); });
 }
 
-function renderPanel(){
+function scoreBand(v){
+  const n = Number(v || 0);
+  if (n >= 5) return { label: '重度偏多', color: '#16a34a' };
+  if (n >= 2) return { label: '中度偏多', color: '#22c55e' };
+  if (n >= 0.5) return { label: '轻度偏多', color: '#86efac' };
+  if (n > -0.5) return { label: '中性', color: '#93c5fd' };
+  if (n >= -2) return { label: '轻度偏空', color: '#fca5a5' };
+  if (n >= -5) return { label: '中度偏空', color: '#f87171' };
+  return { label: '重度偏空', color: '#ef4444' };
+}
+
+function renderPanel(){ 
   const data = sectorsCache[current];
   if (!data) return;
   const deltaClass = data.change >= 0 ? 'up' : 'down';
   const deltaSign = data.change >= 0 ? '+' : '';
   const latestHighlights = (data.highlights || []).slice(-3).reverse();
+  const band = scoreBand(data.sentimentNow ?? 0);
 
   const highlightHTML = latestHighlights.length ? latestHighlights.map(h => `
     <div class="hl">
@@ -69,7 +81,21 @@ function renderPanel(){
   document.getElementById('panel').innerHTML = `
     <div class="card">
       <div class="row"><strong>${titleOf(current)}</strong><span class="delta ${deltaClass}">${deltaSign}${data.change}</span></div>
-      <div class="muted">当前情绪值：${data.sentimentNow ?? 0}</div>
+      <div class="muted" title="情绪值越大越偏多，越小越偏空；绝对值越大代表波动强度更高。">
+        当前情绪值：${data.sentimentNow ?? 0}
+        <span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35);color:${band.color}">${band.label}</span>
+        <span style="margin-left:6px;opacity:.9">ⓘ</span>
+      </div>
+      <div class="muted" style="margin-top:6px;line-height:1.6">
+        阈值图例：
+        <span style="color:#16a34a">≥5 重度偏多</span> ｜
+        <span style="color:#22c55e">2~&lt;5 中度偏多</span> ｜
+        <span style="color:#86efac">0.5~&lt;2 轻度偏多</span> ｜
+        <span style="color:#93c5fd">-0.5~&lt;0.5 中性</span> ｜
+        <span style="color:#fca5a5">-2~≤-0.5 轻度偏空</span> ｜
+        <span style="color:#f87171">-5~&lt;-2 中度偏空</span> ｜
+        <span style="color:#ef4444">≤-5 重度偏空</span>
+      </div>
       <div id="chart_one" style="height:280px;margin-top:10px"></div>
       ${highlightHTML}
     </div>`;
