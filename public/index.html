@@ -30,6 +30,7 @@
       <h1>市场情绪监控看板</h1>
       <div class="muted" id="meta">加载中...</div>
     </div>
+    <div id="summaryHero" class="card" style="margin-top:14px"></div>
     <div id="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px"></div>
     <div id="panel" style="margin-top:12px"></div>
   </div>
@@ -76,6 +77,53 @@ function renderPanel(){
   drawOne(data);
 }
 
+function confidenceLabel(score){
+  if (score >= 0.67) return '高';
+  if (score >= 0.34) return '中';
+  return '低';
+}
+
+function directionLabel(v){
+  if (v >= 0.8) return '偏多';
+  if (v <= -0.8) return '偏空';
+  return '中性';
+}
+
+function trendLabel(v){
+  if (v >= 0.8) return '走强';
+  if (v <= -0.8) return '走弱';
+  return '震荡';
+}
+
+function renderSummary(sectors){
+  const hero = document.getElementById('summaryHero');
+  const entries = Object.entries(sectors || {});
+  if (!entries.length) {
+    hero.innerHTML = `<strong>一句话总结</strong><div class="muted" style="margin-top:6px">暂时没有可用数据，请稍后刷新。</div>`;
+    return;
+  }
+
+  const avgNow = entries.reduce((s, [,v]) => s + Number(v.sentimentNow || 0), 0) / entries.length;
+  const avgChange = entries.reduce((s, [,v]) => s + Number(v.change || 0), 0) / entries.length;
+  const reason = entries
+    .map(([k,v]) => ({ sector: k, absChange: Math.abs(Number(v.change || 0)), news: (v.articles || []).length, error: v.error }))
+    .sort((a,b) => b.absChange - a.absChange)[0];
+
+  const consistency = Math.min(1, Math.abs(avgChange) / 2.5);
+  const sampleScore = Math.min(1, ((reason?.news || 0) / 20));
+  const sourceOk = reason?.error ? 0.2 : 1;
+  const conf = confidenceLabel((consistency * 0.45) + (sampleScore * 0.35) + (sourceOk * 0.2));
+
+  hero.innerHTML = `
+    <div class="row"><strong>一句话总结</strong><span class="muted">面向新手</span></div>
+    <div style="margin-top:8px;font-size:16px;line-height:1.5">
+      当前整体情绪<strong>${directionLabel(avgNow)}</strong>，近1小时<strong>${trendLabel(avgChange)}</strong>；
+      主要由<strong>${titleOf(reason?.sector || 'crypto')}</strong>相关新闻驱动，当前可信度<strong>${conf}</strong>。
+    </div>
+    <div class="muted" style="margin-top:8px">说明：可信度基于变动一致性、样本数量与数据可用性。</div>
+  `;
+}
+
 function drawOne(data){
   const el = document.getElementById('chart_one');
   if(!el) return;
@@ -114,6 +162,7 @@ async function refresh(){
   document.getElementById('meta').textContent = `每5分钟自动更新 ｜ 最后更新：${data.updatedAt || 'N/A'}`;
   sectorsCache = data.sectors || {};
   const keys = Object.keys(sectorsCache);
+  renderSummary(sectorsCache);
   if (!keys.includes(current)) current = keys[0];
   renderTabs(keys);
   renderPanel();
