@@ -216,17 +216,12 @@ function renderPanel(){
 
   const explanationHTML = `
     <div class="row"><strong>为什么变化（近1小时） ${beginnerMode ? '· 先看这里③' : ''}</strong><span style="padding:2px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35)">${nt.label}</span></div>
-    <div class="muted" style="margin-top:8px;line-height:1.65">
-      <strong>① 多空对比：</strong>正向 ${explanation.posCount} 条，负向 ${explanation.negCount} 条（${explanation.trendText}）<br>
-      <strong>② 主导关键词：</strong><span style="color:#86efac">+ ${explanation.topPlus.join('、') || '无'}</span> / <span style="color:#fca5a5">- ${explanation.topMinus.join('、') || '无'}</span><br>
-      <strong>③ 样本变化：</strong>新闻样本 ${explanation.prevNews} → ${explanation.nowNews}<br>
-      <strong>④ 下一步观察建议：</strong>${nt.nextWatch}<br>
-      ${linkage.mode === 'link' ? `联动：先看 ${titleOf(linkage.first)}，再看 ${titleOf(linkage.second)}。` : ''}
-      ${linkage.mode === 'candidate' ? `联动候选：${titleOf(linkage.first)} / ${titleOf(linkage.second)}。` : ''}
-      ${linkage.mode === 'observe' ? '联动：当前分歧较大，先观察1周期。' : ''}
-    </div>
-    <div class="muted" style="margin-top:8px">证据新闻（Top3）：</div>
-    <div style="margin-top:4px;line-height:1.6">${explainNews}</div>`;
+    <div class="muted" style="margin-top:8px;line-height:1.55">
+      <div><strong>① 多空对比：</strong>正向${explanation.posCount}条，负向${explanation.negCount}条；${explanation.trendText}。</div>
+      <div><strong>② 主导关键词：</strong>+${explanation.topPlus.slice(0,2).join('、') || '无'} / -${explanation.topMinus.slice(0,2).join('、') || '无'}。</div>
+      <div><strong>③ 样本变化：</strong>上一小时${explanation.prevNews}条 → 当前${explanation.nowNews}条。</div>
+      <div><strong>④ 下一步观察：</strong>${nt.nextWatch}</div>
+    </div>`;
 
   const highlightHTML = beginnerMode
     ? '<div class="hl muted">先看这里③：先看上方“结论+解释+建议”，详细新闻流已在新手模式下弱化展示。</div>'
@@ -250,7 +245,7 @@ function renderPanel(){
       <div class="muted" style="margin-top:6px">图例：中线=0 ｜ 当前值=${Number(data.sentimentNow ?? 0).toFixed(2)}</div>
       <div class="muted" style="margin-top:6px">${briefReason}</div>
       <details class="hl" style="margin-top:6px">
-        <summary style="cursor:pointer">为什么变化（展开详细原因）</summary>
+        <summary style="cursor:pointer">展开详细原因</summary>
         ${explanationHTML}
       </details>
       <div id="bar_explain" class="hl muted">${beginnerMode ? '先看这里④：点击或悬浮 K 线柱，直接看“这根K线为什么动”。' : '点击或悬浮 K 线柱，查看“这根K线为什么动”。'}</div>
