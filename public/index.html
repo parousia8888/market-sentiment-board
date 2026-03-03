@@ -50,6 +50,7 @@ let charts = {};
 let current = 'crypto';
 let sectorsCache = {};
 let beginnerMode = localStorage.getItem('beginnerMode') !== 'off';
+let proDetailsExpanded = false;
 
 function titleOf(k){ return ({crypto:'加密 / Polymarket',macro:'宏观经济',tech_ai:'AI / 科技',geopolitics:'地缘政治'})[k] || k; }
 
@@ -210,6 +211,7 @@ function renderPanel(){
 
   const explanation = buildExplanation(data);
   const nt = classifyNoiseTrend(data);
+  const showDetails = !beginnerMode || proDetailsExpanded;
   const linkage = getLinkageAdvice(current, nt, explanation);
   const oneHourChange = Number(data.change || 0);
   const confidenceScore = Math.min(1, (Math.min(1, (explanation.nowNews || 0) / 20) * 0.6) + ((nt.label === '强趋势' ? 1 : nt.label === '初步趋势' ? 0.6 : 0.3) * 0.4));
@@ -249,13 +251,13 @@ function renderPanel(){
       <div class="muted" style="margin-top:4px">来源：${strongest.source || '未知'} ｜ 时间：${String(strongest.seen || strongest.hTime || '').replace('T',' ').slice(0,16)} ｜ 影响方向：${strongest.dir}</div>
     </div>` : '<div class="hl muted">暂无可用证据</div>';
 
-  const top3Fold = top3.length > 1 ? `
+  const top3Fold = showDetails && top3.length > 1 ? `
     <details class="hl" style="margin-top:6px">
       <summary style="cursor:pointer">查看Top3（其余证据）</summary>
       ${top3.slice(1).map(r => `<div style="margin-top:6px">• <a href="${r.url}" target="_blank">${r.title}</a><br><span class="muted">来源：${r.source || '未知'} ｜ 时间：${String(r.seen || r.hTime || '').replace('T',' ').slice(0,16)} ｜ 影响方向：${r.dir}</span></div>`).join('')}
     </details>` : '';
 
-  const allFold = rest.length ? `
+  const allFold = showDetails && rest.length ? `
     <details class="hl" style="margin-top:6px">
       <summary style="cursor:pointer">查看全部证据</summary>
       ${scoredEvidence.map(r => `<div style="margin-top:6px">• <a href="${r.url}" target="_blank">${r.title}</a><br><span class="muted">来源：${r.source || '未知'} ｜ 时间：${String(r.seen || r.hTime || '').replace('T',' ').slice(0,16)} ｜ 影响方向：${r.dir}</span></div>`).join('')}
@@ -274,15 +276,24 @@ function renderPanel(){
         <span style="padding:3px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35)">可信度 ${confidenceTag}</span>
       </div>
       <div id="chart_one" style="height:280px;margin-top:8px"></div>
-      <div class="muted" style="margin-top:6px">图例：中线=0 ｜ 当前值=${Number(data.sentimentNow ?? 0).toFixed(2)}</div>
+      ${showDetails ? `<div class="muted" style="margin-top:6px">图例：中线=0 ｜ 当前值=${Number(data.sentimentNow ?? 0).toFixed(2)}</div>` : ''}
       <div class="muted" style="margin-top:6px">${briefReason}</div>
-      <details class="hl" style="margin-top:6px">
+      ${beginnerMode ? `<button id="toggle_pro" class="tab" style="margin-top:6px">${showDetails ? '收起专业细节' : '展开专业细节'}</button>` : ''}
+      <details class="hl" style="margin-top:6px" ${showDetails ? 'open' : ''}>
         <summary style="cursor:pointer">展开详细原因</summary>
         ${explanationHTML}
       </details>
       <div id="bar_explain" class="hl muted">${beginnerMode ? '先看这里④：点击或悬浮 K 线柱，直接看“这根K线为什么动”。' : '点击或悬浮 K 线柱，查看“这根K线为什么动”。'}</div>
       ${highlightHTML}
     </div>`;
+
+  const toggleBtn = document.getElementById('toggle_pro');
+  if (toggleBtn) {
+    toggleBtn.onclick = () => {
+      proDetailsExpanded = !proDetailsExpanded;
+      renderPanel();
+    };
+  }
 
   drawOne(data);
 }
@@ -553,6 +564,7 @@ async function refresh(){
 applyBeginnerMode();
 document.getElementById('beginnerToggle')?.addEventListener('change', (e) => {
   beginnerMode = !!e.target.checked;
+  if (!beginnerMode) proDetailsExpanded = true;
   applyBeginnerMode();
   renderSummary(sectorsCache);
   renderPanel();
