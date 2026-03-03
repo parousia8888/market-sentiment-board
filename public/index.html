@@ -22,6 +22,9 @@
     .tab.active{background:#2563eb;border-color:#3b82f6}
     .news{display:flex;gap:10px;margin:8px 0}
     .news img{width:72px;height:48px;object-fit:cover;border-radius:6px;border:1px solid rgba(151,163,198,.25)}
+    .overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:8px}
+    .ov{padding:8px 10px;border-radius:10px;border:1px solid rgba(151,163,198,.25);background:rgba(17,24,46,.7);cursor:pointer;font-size:12px;line-height:1.35}
+    .ov.active{border-color:#3b82f6;background:rgba(37,99,235,.18)}
   </style>
 </head>
 <body>
@@ -37,7 +40,8 @@
     </div>
     <div id="summaryHero" class="card" style="margin-top:14px"></div>
     <div id="dailyBrief" class="card" style="margin-top:10px"></div>
-    <div id="tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"></div>
+    <div id="overview" class="overview"></div>
+    <div id="tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
     <div id="panel" style="margin-top:8px"></div>
   </div>
 
@@ -392,6 +396,38 @@ function renderDailyBrief(sectors){
     </details>`;
 }
 
+function renderOverview(sectors){
+  const box = document.getElementById('overview');
+  const entries = Object.entries(sectors || {});
+  if (!box) return;
+  if (!entries.length) { box.innerHTML = ''; return; }
+
+  const sorted = [...entries].sort((a,b)=>Number(b[1].sentimentNow||0)-Number(a[1].sentimentNow||0));
+  const strongest = sorted[0]?.[0];
+  const weakest = sorted.at(-1)?.[0];
+
+  box.innerHTML = entries.map(([k,v]) => {
+    const ex = buildExplanation(v);
+    const nt = classifyNoiseTrend(v).label;
+    const reason = ex.topPlus[0] ? `偏多：${ex.topPlus[0]}` : ex.topMinus[0] ? `偏空：${ex.topMinus[0]}` : '信号分歧';
+    const mark = k === strongest ? '🏆最强' : k === weakest ? '⚠最弱' : '';
+    return `<div class="ov ${k===current?'active':''}" data-k="${k}">
+      <div class="row"><strong>${titleOf(k)}</strong><span class="muted">${mark}</span></div>
+      <div>情绪 ${Number(v.sentimentNow||0).toFixed(2)} ｜ 1h ${Number(v.change||0)>=0?'+':''}${Number(v.change||0).toFixed(2)}</div>
+      <div class="muted">${nt} · ${reason}</div>
+    </div>`;
+  }).join('');
+
+  box.querySelectorAll('.ov').forEach(el => {
+    el.onclick = () => {
+      current = el.dataset.k;
+      renderOverview(sectorsCache);
+      renderTabs(Object.keys(sectorsCache));
+      renderPanel();
+    };
+  });
+}
+
 function dedupeNews(items = []) {
   const seen = new Set();
   const out = [];
@@ -508,6 +544,7 @@ async function refresh(){
   const keys = Object.keys(sectorsCache);
   renderSummary(sectorsCache);
   renderDailyBrief(sectorsCache);
+  renderOverview(sectorsCache);
   if (!keys.includes(current)) current = keys[0];
   renderTabs(keys);
   renderPanel();
