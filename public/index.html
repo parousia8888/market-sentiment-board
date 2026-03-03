@@ -207,6 +207,10 @@ function renderPanel(){
   const explanation = buildExplanation(data);
   const nt = classifyNoiseTrend(data);
   const linkage = getLinkageAdvice(current, nt, explanation);
+  const oneHourChange = Number(data.change || 0);
+  const confidenceScore = Math.min(1, (Math.min(1, (explanation.nowNews || 0) / 20) * 0.6) + ((nt.label === '强趋势' ? 1 : nt.label === '初步趋势' ? 0.6 : 0.3) * 0.4));
+  const confidenceTag = confidenceLabel(confidenceScore);
+  const changeText = `${oneHourChange >= 0 ? '+' : ''}${oneHourChange.toFixed(2)}`;
   const explainNews = (explanation.impactNews || []).map(n => `• <a href="${n.url}" target="_blank">${n.title}</a>（${n.source || '未知来源'}）`).join('<br>') || '• 暂无高影响新闻样本';
   const briefReason = `简析：${explanation.negCount > explanation.posCount ? '负面信号占优' : explanation.posCount > explanation.negCount ? '正面信号占优' : '多空接近'}，${explanation.trendText}。`;
 
@@ -235,9 +239,12 @@ function renderPanel(){
   document.getElementById('panel').innerHTML = `
     <div class="card">
       <div class="row"><strong>${titleOf(current)}</strong><span class="delta ${deltaClass}">${deltaSign}${data.change}</span></div>
-      <div class="muted" title="情绪值越大越偏多，越小越偏空；绝对值越大代表波动强度更高。">
-        当前情绪值：${data.sentimentNow ?? 0} ${beginnerMode ? '（越大越偏多，越小越偏空）' : ''}
-        <span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35);color:${band.color}">${band.label}</span>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+        <span style="padding:3px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35)">情绪值 ${Number(data.sentimentNow ?? 0).toFixed(2)}</span>
+        <span style="padding:3px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35);color:${band.color}">等级 ${band.label}</span>
+        <span style="padding:3px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35);color:${oneHourChange>=0?'#22c55e':'#ef4444'}">1h变化 ${changeText}</span>
+        <span style="padding:3px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35)">趋势 ${nt.label}</span>
+        <span style="padding:3px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35)">可信度 ${confidenceTag}</span>
       </div>
       <div id="chart_one" style="height:280px;margin-top:8px"></div>
       <div class="muted" style="margin-top:8px">${briefReason}</div>
