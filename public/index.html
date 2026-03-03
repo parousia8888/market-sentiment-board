@@ -223,13 +223,41 @@ function renderPanel(){
       <div><strong>④ 下一步观察：</strong>${nt.nextWatch}</div>
     </div>`;
 
-  const highlightHTML = beginnerMode
-    ? '<div class="hl muted">先看这里③：先看上方“结论+解释+建议”，详细新闻流已在新手模式下弱化展示。</div>'
-    : (latestHighlights.length ? latestHighlights.map(h => `
+  const evidencePool = dedupeNews(latestHighlights.flatMap(h => (h.reasons || []).map(r => ({ ...r, delta: Number(h.delta || 0), hTime: h.time }))));
+  const scoredEvidence = evidencePool.map(r => {
+    const posN = (r.scoreBasis?.pos || []).length;
+    const negN = (r.scoreBasis?.neg || []).length;
+    const dir = posN > negN ? '偏多' : posN < negN ? '偏空' : '中性';
+    const directionMatch = (r.delta >= 0 && dir === '偏多') || (r.delta < 0 && dir === '偏空');
+    const score = (directionMatch ? 2 : 0) + Math.min(2, Math.abs(Number(r.delta || 0)));
+    return { ...r, dir, directionMatch, score };
+  }).sort((a,b) => b.score - a.score);
+
+  const strongest = scoredEvidence[0];
+  const top3 = scoredEvidence.slice(0,3);
+  const rest = scoredEvidence.slice(3);
+  const strongestTag = strongest ? (strongest.directionMatch ? '方向一致' : '高权重') : '';
+
+  const strongestHTML = strongest ? `
     <div class="hl">
-      <div class="muted">变动时点：${h.time} ｜ Δ${h.delta}</div>
-      ${(h.reasons || []).map(r => `<div class="news">${r.image ? `<img src="${r.image}" alt="news">` : ''}<div>• <a href="${r.url}" target="_blank">${r.title}</a><br><span class="muted">来源：${r.source}</span><br><span class="muted">内容：${(r.content || '').slice(0,140)}...</span><br><span class="muted">打分依据：+${(r.scoreBasis?.pos||[]).join(',')||'无'} / -${(r.scoreBasis?.neg||[]).join(',')||'无'}</span></div></div>`).join('')}
-    </div>`).join('') : '<div class="hl muted">暂无显著变动新闻</div>');
+      <div><strong>最强证据</strong> <span class="muted">（${strongestTag}）</span></div>
+      <div style="margin-top:6px">• <a href="${strongest.url}" target="_blank">${strongest.title}</a></div>
+      <div class="muted" style="margin-top:4px">来源：${strongest.source || '未知'} ｜ 时间：${String(strongest.seen || strongest.hTime || '').replace('T',' ').slice(0,16)} ｜ 影响方向：${strongest.dir}</div>
+    </div>` : '<div class="hl muted">暂无可用证据</div>';
+
+  const top3Fold = top3.length > 1 ? `
+    <details class="hl" style="margin-top:6px">
+      <summary style="cursor:pointer">查看Top3（其余证据）</summary>
+      ${top3.slice(1).map(r => `<div style="margin-top:6px">• <a href="${r.url}" target="_blank">${r.title}</a><br><span class="muted">来源：${r.source || '未知'} ｜ 时间：${String(r.seen || r.hTime || '').replace('T',' ').slice(0,16)} ｜ 影响方向：${r.dir}</span></div>`).join('')}
+    </details>` : '';
+
+  const allFold = rest.length ? `
+    <details class="hl" style="margin-top:6px">
+      <summary style="cursor:pointer">查看全部证据</summary>
+      ${scoredEvidence.map(r => `<div style="margin-top:6px">• <a href="${r.url}" target="_blank">${r.title}</a><br><span class="muted">来源：${r.source || '未知'} ｜ 时间：${String(r.seen || r.hTime || '').replace('T',' ').slice(0,16)} ｜ 影响方向：${r.dir}</span></div>`).join('')}
+    </details>` : '';
+
+  const highlightHTML = `${strongestHTML}${top3Fold}${allFold}`;
 
   document.getElementById('panel').innerHTML = `
     <div class="card">
