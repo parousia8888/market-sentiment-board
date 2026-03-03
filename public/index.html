@@ -247,7 +247,8 @@ function renderPanel(){
         <span style="padding:3px 8px;border-radius:999px;border:1px solid rgba(151,163,198,.35)">可信度 ${confidenceTag}</span>
       </div>
       <div id="chart_one" style="height:280px;margin-top:8px"></div>
-      <div class="muted" style="margin-top:8px">${briefReason}</div>
+      <div class="muted" style="margin-top:6px">图例：中线=0 ｜ 当前值=${Number(data.sentimentNow ?? 0).toFixed(2)}</div>
+      <div class="muted" style="margin-top:6px">${briefReason}</div>
       <details class="hl" style="margin-top:6px">
         <summary style="cursor:pointer">为什么变化（展开详细原因）</summary>
         ${explanationHTML}
@@ -417,6 +418,8 @@ function drawOne(data){
   });
   const series = chart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', borderVisible:false, wickUpColor:'#22c55e', wickDownColor:'#ef4444' });
   series.setData(raw);
+  const midline = chart.addLineSeries({ color:'rgba(151,163,198,.45)', lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
+  midline.setData(raw.map(x => ({ time: x.time, value: 0 })));
   chart.timeScale().fitContent();
 
   const tip = document.createElement('div');
@@ -436,9 +439,12 @@ function drawOne(data){
       ? news.map(n => `• <a href="${n.url}" target="_blank">${n.title}</a>（${n.source}｜${(n.time || '').replace('T', ' ').slice(0,16)}）`).join('<br>')
       : '• 当前时间点未命中证据新闻，建议查看相邻时间点。';
 
-    tip.innerHTML = beginnerMode
-      ? `涨跌：${change}<br>新闻数：${meta.newsCount || 0}`
-      : `涨跌：${change}<br>新闻数：${meta.newsCount || 0}<br>加分词：${(meta.plus||[]).join(',') || '无'}<br>减分词：${(meta.minus||[]).join(',') || '无'}`;
+    const delta = Number(change);
+    const move = delta > 0.05 ? '上涨' : delta < -0.05 ? '下跌' : '震荡';
+    const plusN = (meta.plus || []).length;
+    const minusN = (meta.minus || []).length;
+    const bias = plusN > minusN ? '偏多' : plusN < minusN ? '偏空' : '中性';
+    tip.innerHTML = `这根K：${move}（Δ${change}）<br>当时新闻：${meta.newsCount || 0}条<br>市场倾向：${bias}`;
     explainEl.innerHTML = `<div><strong>这根K线为什么动</strong></div>
       <div class="muted" style="margin-top:6px;line-height:1.6">${explainSentence(meta)}（Δ${change}）</div>
       <div class="muted" style="margin-top:6px">证据新闻（去重后 Top3）：</div>
