@@ -255,6 +255,17 @@ function renderPanel(){
       <div class="muted" style="margin-top:4px">来源：${strongest.source || '未知'} ｜ 时间：${String(strongest.seen || strongest.hTime || '').replace('T',' ').slice(0,16)} ｜ 影响方向：${strongest.dir}</div>
     </div>` : '<div class="hl muted">暂无可用证据</div>';
 
+  const linkageVisual = `
+    <div class="hl" style="margin-top:6px">
+      <div><strong>建议联动查看</strong></div>
+      <div class="muted" style="margin-top:4px">${titleOf(current)} → ${titleOf(linkage.first)}${linkage.second ? ` → ${titleOf(linkage.second)}` : ''}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        <button class="tab" id="link_first">看 ${titleOf(linkage.first)}</button>
+        ${linkage.second ? `<button class="tab" id="link_second">看 ${titleOf(linkage.second)}</button>` : ''}
+      </div>
+      <div class="muted" style="margin-top:4px">${linkage.mode === 'observe' ? '先观察1周期再联动。' : linkage.whyFirst}</div>
+    </div>`;
+
   const top3Fold = showDetails && top3.length > 1 ? `
     <details class="hl" style="margin-top:6px">
       <summary style="cursor:pointer">查看Top3（其余证据）</summary>
@@ -288,6 +299,7 @@ function renderPanel(){
         <summary style="cursor:pointer">展开详细原因</summary>
         ${explanationHTML}
       </details>
+      ${linkageVisual}
       <div id="bar_explain" class="hl muted">${beginnerMode ? '先看这里④：点击或悬浮 K 线柱，直接看“这根K线为什么动”。' : '点击或悬浮 K 线柱，查看“这根K线为什么动”。'}</div>
       ${highlightHTML}
     </div>`;
@@ -296,6 +308,25 @@ function renderPanel(){
   if (toggleBtn) {
     toggleBtn.onclick = () => {
       proDetailsExpanded = !proDetailsExpanded;
+      renderPanel();
+    };
+  }
+
+  const linkFirst = document.getElementById('link_first');
+  if (linkFirst) {
+    linkFirst.onclick = () => {
+      current = linkage.first;
+      renderOverview(sectorsCache);
+      renderTabs(Object.keys(sectorsCache));
+      renderPanel();
+    };
+  }
+  const linkSecond = document.getElementById('link_second');
+  if (linkSecond) {
+    linkSecond.onclick = () => {
+      current = linkage.second;
+      renderOverview(sectorsCache);
+      renderTabs(Object.keys(sectorsCache));
       renderPanel();
     };
   }
